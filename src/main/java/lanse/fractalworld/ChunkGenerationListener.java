@@ -1,5 +1,6 @@
 package lanse.fractalworld;
 
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -8,19 +9,18 @@ import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkStatus;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public class ChunkGenerationListener {
 
     public static final Set<ChunkPos> processedChunksOverworld = new HashSet<>();
     public static final Set<ChunkPos> processedChunksNether = new HashSet<>();
     public static final Set<ChunkPos> processedChunksEnd = new HashSet<>();
+    public static int processedChunkCount = 0;
     public static int MAX_RENDER_DIST = 8;
+    public static boolean complete = false;
 
-    public static void tryNewChunks(MinecraftServer server) {
+    public static void tryNewChunks(MinecraftServer server, boolean repeat) {
         ServerWorld world;
 
         //For each player, find a new chunk position within the max render distance
@@ -28,8 +28,13 @@ public class ChunkGenerationListener {
 
             world = player.getServerWorld();
             ChunkPos playerChunkPos = player.getChunkPos();
+
+            RegistryKey<World> dimensionKey = world.getRegistryKey();
+            if (dimensionKey.equals(World.END) && (Math.abs(player.getX()) > 500 || Math.abs(player.getZ()) > 500)) continue;
+
             List<Chunk> nearbyChunks = new ArrayList<>();
             int radius = 1;
+            complete = true;
 
             for (int i = 1; i < MAX_RENDER_DIST; i++) {
 
@@ -43,18 +48,34 @@ public class ChunkGenerationListener {
                             if (world.getRegistryKey().equals(World.OVERWORLD)){
                                 if (!processedChunksOverworld.contains(chunkPos)){
                                     nearbyChunks.add(chunk);
+                                    complete = false;
+                                    if (!repeat){
+                                        processChunk(world, chunk, false);
+                                        return;
+                                    }
                                 }
                             }
                             else if (world.getRegistryKey().equals(World.NETHER)){
                                 if (!processedChunksNether.contains(chunkPos)){
                                     nearbyChunks.add(chunk);
+                                    complete = false;
+                                    if (!repeat){
+                                        processChunk(world, chunk, false);
+                                        return;
+                                    }
                                 }
                             }
                             else if (world.getRegistryKey().equals(World.END)){
                                 if (!processedChunksEnd.contains(chunkPos)){
                                     nearbyChunks.add(chunk);
+                                    complete = false;
+                                    if (!repeat){
+                                        processChunk(world, chunk, false);
+                                        return;
+                                    }
                                 }
                             }
+                            //if{ if{ if{ if{ if{ if{ if{ if{ if{ if{ if{ if{ e }}}}}}}}}}}}}}}}}}}}}}}}
                         }
                     }
                 }
@@ -62,7 +83,7 @@ public class ChunkGenerationListener {
                     radius++;
                 } else {
                     for (Chunk chunk : nearbyChunks) {
-                        processChunk(world, chunk);
+                        processChunk(world, chunk, true);
                     }
                     break; // Exit the loop after processing chunks for this player
                 }
@@ -70,8 +91,9 @@ public class ChunkGenerationListener {
         }
     }
 
-    private static void processChunk(ServerWorld world, Chunk chunk) {
+    private static void processChunk(ServerWorld world, Chunk chunk, boolean fullQueue) {
         ChunkPos chunkPos = chunk.getPos();
+        processedChunkCount++;
 
         // Skip if chunk is already processed
         if (world.getRegistryKey().equals(World.OVERWORLD)) {
@@ -87,19 +109,28 @@ public class ChunkGenerationListener {
             processedChunksEnd.add(chunkPos);
         }
 
-        // Queue each column for processing
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                int worldX = chunkPos.getStartX() + x;
-                int worldZ = chunkPos.getStartZ() + z;
-                FractalWorld.processingQueue.add(new FractalWorld.ChunkTask(world, worldX, worldZ));
+        if (fullQueue){
+            // Queue each column for processing
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    int worldX = chunkPos.getStartX() + x;
+                    int worldZ = chunkPos.getStartZ() + z;
+                    FractalWorld.processingQueue.add(new FractalWorld.ChunkTask(world, worldX, worldZ));
+                }
             }
+        } else {
+            int worldX = chunkPos.getStartX();
+            int worldZ = chunkPos.getStartZ();
+            FractalWorld.processingQueue.add(new FractalWorld.ChunkTask(world, worldX, worldZ));
         }
     }
     public static void clearProcessedChunks() {
+        FractalWorld.processingQueue.clear();
         processedChunksOverworld.clear();
         processedChunksNether.clear();
         processedChunksEnd.clear();
-        FractalWorld.processingQueue.clear();
+        processedChunkCount = 0;
+        complete = false;
+
     }
 }
