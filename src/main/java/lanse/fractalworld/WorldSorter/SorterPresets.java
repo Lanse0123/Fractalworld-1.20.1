@@ -60,9 +60,7 @@ public class SorterPresets {
             world = (ServerWorld) player.getWorld();
             dimensionKey = world.getRegistryKey();
 
-            if (!dimensionKey.equals(World.OVERWORLD)){
-                continue;
-            }
+            if (!dimensionKey.equals(World.OVERWORLD)) continue;
 
             switch (sorterPreset) {
                 case "very_first_sorter_lanse_made" -> veryFirstSorter(player, world);
@@ -453,7 +451,7 @@ public class SorterPresets {
             for (int z = 0; z < 16; z++) {
                 BlockPos pos1 = new BlockPos((chunk1Pos.x << 4) + x, -64, (chunk1Pos.z << 4) + z);
                 BlockPos pos2 = new BlockPos((chunk2Pos.x << 4) + x, -64, (chunk2Pos.z << 4) + z);
-                SortingGenerator.swapColumns(world, pos1.getX(), pos1.getZ(), pos2.getX(), pos2.getZ(), true);
+                SortingGenerator.swapColumns(world, pos1.getX(), pos1.getZ(), pos2.getX(), pos2.getZ(), false);
             }
         }
     }
