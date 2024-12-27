@@ -1,5 +1,7 @@
 package lanse.fractalworld;
 
+import lanse.fractalworld.WorldSorter.SortingGenerator;
+import lanse.fractalworld.WorldSymmetrifier.Symmetrifier;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
@@ -7,7 +9,6 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 
@@ -20,15 +21,18 @@ public class DimensionHandler {
     private static final Map<UUID, Integer> playersToTeleport = new HashMap<>();
 
     public static void dimensionalChecker(MinecraftServer server) {
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            UUID playerId = player.getUuid();
-            RegistryKey<World> currentDimension = player.getWorld().getRegistryKey();
+        if (!Symmetrifier.symmetrifierEnabled && !SortingGenerator.WorldSorterIsEnabled){
 
-            if (!playerDimensions.containsKey(playerId)) {
-                playerDimensions.put(playerId, currentDimension);
-            } else if (!playerDimensions.get(playerId).equals(currentDimension)) {
-                playerSwitchedDimension(player, currentDimension);
-                playerDimensions.put(playerId, currentDimension);
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                UUID playerId = player.getUuid();
+                RegistryKey<World> currentDimension = player.getWorld().getRegistryKey();
+
+                if (!playerDimensions.containsKey(playerId)) {
+                    playerDimensions.put(playerId, currentDimension);
+                } else if (!playerDimensions.get(playerId).equals(currentDimension)) {
+                    playerSwitchedDimension(player, currentDimension);
+                    playerDimensions.put(playerId, currentDimension);
+                }
             }
         }
     }
@@ -36,28 +40,12 @@ public class DimensionHandler {
     public static void playerSwitchedDimension(ServerPlayerEntity player, RegistryKey<World> currentDimension) {
         BlockPos pos = new BlockPos((int) player.getX(), 319, (int) player.getZ());
 
-        if (currentDimension.equals(World.END) ||
-                player.getWorld().getBlockState(pos).getBlock() == Blocks.STRUCTURE_VOID) {
+        if (currentDimension.equals(World.END) || player.getWorld().getBlockState(pos).getBlock() == Blocks.STRUCTURE_VOID) {
             return;
-        }
-
-        ChunkPos chunkPos = new ChunkPos(pos);
-
-        if (currentDimension.equals(World.OVERWORLD)) {
-            if (ChunkGenerationListener.processedChunksOverworld.contains(chunkPos)) {
-                return;
-            }
-        }
-
-        if (currentDimension.equals(World.NETHER)) {
-            if (ChunkGenerationListener.processedChunksNether.contains(chunkPos)) {
-                return;
-            }
         }
 
         player.teleport(player.getServerWorld(), player.getX(), player.getY() + 10000, player.getZ(), player.getYaw(), player.getPitch());
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOW_FALLING, 205, 1));
-
         playersToTeleport.put(player.getUuid(), FractalWorld.tickCount + 200);
     }
 
@@ -90,7 +78,6 @@ public class DimensionHandler {
                 }
             }
         }
-
         player.teleport(player.getServerWorld(), player.getX(), topY + 1, player.getZ(), player.getYaw(), player.getPitch());
         player.removeStatusEffect(StatusEffects.SLOW_FALLING);
     }
