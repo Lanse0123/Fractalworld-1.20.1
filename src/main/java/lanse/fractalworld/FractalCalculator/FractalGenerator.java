@@ -2,6 +2,8 @@ package lanse.fractalworld.FractalCalculator;
 
 import lanse.fractalworld.ChunkGenerationListener;
 import lanse.fractalworld.FractalWorld;
+import lanse.fractalworld.WorldSorter.SortingGenerator;
+import lanse.fractalworld.WorldSymmetrifier.Symmetrifier;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -9,7 +11,6 @@ import net.minecraft.text.Text;
 import java.util.Objects;
 
 public class FractalGenerator {
-    public static int SMOOTHING_VALUE = 1;
     public static int MAX_ITER = 50;
     public static int MIN_ITER = 5;
     public static int INITIAL_HEIGHT_OFFSET = 63;
@@ -44,15 +45,15 @@ public class FractalGenerator {
         } else { //END DIMENSION
             tempPreset = "2d_mandelbrot_fractal";
             //Outer end islands (mess around with these later) (This does nothing rn)
-            if (Math.sqrt(x * x + z * z) > 800){
+            if (Math.abs(x) > 500 || Math.abs(z) > 500){
                 setScale(100000000);
                 mx = x * scale - (0.006394660980056699 + (Math.sqrt(x * z) / 10000000));
                 mz = z * scale + 0.6552201285415977;
             } else {
                 setScale(75);
-                //Inner end island
-                mx = x * scale - xOffset;
-                mz = z * scale - zOffset;
+                //Inner end island (REMOVED THE X AND Z OFFSET)
+                mx = x * scale - 0;
+                mz = z * scale - 0;
             }
         }
 
@@ -61,7 +62,7 @@ public class FractalGenerator {
         FractalPresets.fractalPreset = tempPreset;
         setScale(tempPlayerScale);
 
-        return INITIAL_HEIGHT_OFFSET + (iter / SMOOTHING_VALUE) * SMOOTHING_VALUE;
+        return INITIAL_HEIGHT_OFFSET + (iter);
     }
     public static int[] get3DHeight(double x, double z, String dimensionType) {
         double mx;
@@ -79,7 +80,7 @@ public class FractalGenerator {
         } else { // END DIMENSION
             tempPreset = "2d_mandelbrot_fractal";
             // Adjust parameters based on distance for outer end islands
-            if (Math.sqrt(x * x + z * z) > 980) {
+            if (Math.abs(x) > 500 || Math.abs(z) > 500) {
                 setScale(100000000);
                 mx = x * scale - (0.2957601666065326 + (Math.sqrt(x * z) / 10000000));
                 mz = z * scale + 0.5794332427578901;
@@ -94,11 +95,6 @@ public class FractalGenerator {
         FractalPresets.fractalPreset = tempPreset;
         setScale(tempPlayerScale);
 
-        if (SMOOTHING_VALUE == 1) return iterArr;
-
-        for (int i = 0; i < iterArr.length; i++){
-            iterArr[i] = (iterArr[i] / SMOOTHING_VALUE) * SMOOTHING_VALUE;
-        }
         return iterArr;
     }
 
@@ -136,7 +132,6 @@ public class FractalGenerator {
         int minIterations = FractalGenerator.MIN_ITER;
         int scale = FractalGenerator.playerScale;
         int initialHeightOffset = FractalGenerator.INITIAL_HEIGHT_OFFSET;
-        int smoothingValue = FractalGenerator.SMOOTHING_VALUE;
         int chunkLoadingSpeed = FractalWorld.maxColumnsPerTick;
         int renderDistance = ChunkGenerationListener.MAX_RENDER_DIST;
         boolean permaSave = FractalWorld.permaSave;
@@ -156,7 +151,6 @@ public class FractalGenerator {
                         - Min Iterations: %d
                         - Scale: %d
                         - Initial Height Offset: %d
-                        - Smoothing Value: %d
                         - Chunk Loading Speed: %d
                         - Render Distance: %d
                         - Permanent Save Enabled: %b
@@ -165,7 +159,7 @@ public class FractalGenerator {
                         - Fractal Offset: %f %f
                         - Fractal Power 3D: %d
                         - Color Pallet: %s""",
-                maxIterations, minIterations, scale, initialHeightOffset, smoothingValue,
+                maxIterations, minIterations, scale, initialHeightOffset,
                 chunkLoadingSpeed, renderDistance, permaSave, fractalPreset, seedReal,
                 seedImaginary, mx, mz, power, colorPallet
         );
@@ -176,6 +170,8 @@ public class FractalGenerator {
         boolean worldPainterFullHeightEnabled = WorldPainter.worldPainterFullHeightEnabled;
         boolean heightGeneratorEnabled = FractalGenerator.heightGeneratorEnabled;
         boolean inverted = FractalGenerator.INVERTED_HEIGHT;
+        boolean sorter = SortingGenerator.WorldSorterIsEnabled;
+        boolean symmetrifier = Symmetrifier.symmetrifierEnabled;
 
         String settingsMessage = String.format(
                 """     
@@ -184,8 +180,11 @@ public class FractalGenerator {
                         - World Painter Enabled: %b
                         - World Painter Full Height Enabled: %b
                         - Terrain Height Generator Enabled: %b
-                        - Terrain Height Inverted: %b""",
-                worldPainterEnabled, worldPainterFullHeightEnabled, heightGeneratorEnabled, inverted
+                        - Terrain Height Inverted: %b
+                        - World Sorter Enabled: %b
+                        - World Symmetrifier Enabled: %b""",
+                worldPainterEnabled, worldPainterFullHeightEnabled, heightGeneratorEnabled, inverted,
+                sorter, symmetrifier
         );
         source.sendFeedback(() -> Text.literal(settingsMessage), false);
     }
