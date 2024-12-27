@@ -1,19 +1,22 @@
 package lanse.fractalworld;
 
+import lanse.fractalworld.Automata.AutomataControl;
 import lanse.fractalworld.FractalCalculator.ColumnClearer;
 import lanse.fractalworld.FractalCalculator.FractalGenerator;
 import lanse.fractalworld.FractalCalculator.FractalPresets;
 import lanse.fractalworld.FractalCalculator.WorldPainter;
+import lanse.fractalworld.WorldSymmetrifier.Symmetrifier;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.IceBlock;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
+import net.minecraft.nbt.NbtCompound;
 
 import java.util.*;
 
@@ -26,14 +29,26 @@ public class WorldEditor {
             Blocks.COAL_ORE, Blocks.IRON_ORE, Blocks.GRAVEL, Blocks.SAND, Blocks.RED_SAND, Blocks.PODZOL,
             Blocks.MYCELIUM, Blocks.MUD, Blocks.PACKED_ICE, Blocks.BLUE_ICE, Blocks.SNOW_BLOCK,
             Blocks.POWDER_SNOW, Blocks.DRIPSTONE_BLOCK, Blocks.CLAY, Blocks.DIRT_PATH, Blocks.COARSE_DIRT,
-            Blocks.NETHERRACK, Blocks.END_STONE, Blocks.OBSIDIAN
+            Blocks.NETHERRACK, Blocks.END_STONE, Blocks.OBSIDIAN, Blocks.SANDSTONE, Blocks.BUBBLE_COLUMN,
+            Blocks.DEEPSLATE
     );
 
     public static void adjustColumn(ServerWorld world, int x, int z, String dimensionType) {
+
+        if (Symmetrifier.symmetrifierEnabled){
+            Symmetrifier.Symmetrify(world, x, z);
+            return;
+        }
+
+        if (AutomataControl.automataIsEnabled){
+            AutomataControl.draw(world, x, z);
+            return;
+        }
+
         // Find the highest valid block in the column
         int highestY = -2500;
 
-        for (int y = 320; y >= -64; y--) {
+        for (int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z); y >= -64; y--) {
             BlockPos pos = new BlockPos(x, y, z);
             BlockState state = world.getBlockState(pos);
 
@@ -80,7 +95,7 @@ public class WorldEditor {
             return;
         }
 
-        if (targetHeight - FractalGenerator.INITIAL_HEIGHT_OFFSET >= FractalGenerator.MAX_ITER / FractalGenerator.SMOOTHING_VALUE) {
+        if (targetHeight - FractalGenerator.INITIAL_HEIGHT_OFFSET >= FractalGenerator.MAX_ITER) {
             if (FractalGenerator.heightGeneratorEnabled) {
                 ColumnClearer.clearColumn(world, x, z);
             }
@@ -113,51 +128,113 @@ public class WorldEditor {
 
         int heightDifference = FractalGenerator.INVERTED_HEIGHT ? currentY - targetY : targetY - currentY;
 
+        // Blocks to exclude from moving or replacing
+        Set<Block> excludedBlocks = Set.of(
+                Blocks.END_PORTAL,
+                Blocks.END_PORTAL_FRAME,
+                Blocks.END_GATEWAY
+        );
+
         if (heightDifference > 0) {
-            // Move the column up to what the fractal says it should be
+            // Move the column up
             for (int y = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z); y >= -64; y--) {
                 BlockPos oldPos = new BlockPos(x, y, z);
                 BlockState state = world.getBlockState(oldPos);
+
+                // Trigger explosion for End Portal Frames
+                if (state.isOf(Blocks.END_PORTAL_FRAME)) {
+                    world.createExplosion(null, x, y + 5, z, 35.0F, World.ExplosionSourceType.MOB);
+                    world.createExplosion(null, x, y - 5, z, 35.0F, World.ExplosionSourceType.MOB);
+                    continue;
+                }
+
+                if (excludedBlocks.contains(state.getBlock())) continue;
+
                 BlockPos newPos = new BlockPos(x, y + heightDifference, z);
-                world.setBlockState(newPos, state);
-                world.setBlockState(oldPos, Blocks.AIR.getDefaultState()); // Clear old block
+
+                // Move block state and preserve tile entity data
+                if (!excludedBlocks.contains(world.getBlockState(newPos).getBlock())) {
+                    moveBlockWithNbt(world, oldPos, newPos);
+                }
+
+                // Clear the old block
+                if (!excludedBlocks.contains(world.getBlockState(oldPos).getBlock())) {
+                    world.setBlockState(oldPos, Blocks.AIR.getDefaultState());
+                }
             }
         } else if (heightDifference < 0) {
-            // Move the column down to what the fractal says it should be
+            // Move the column down
             for (int y = -64; y <= 319; y++) {
                 BlockPos oldPos = new BlockPos(x, y, z);
                 BlockState state = world.getBlockState(oldPos);
+
+                // Trigger explosion for End Portal Frames
+                if (state.isOf(Blocks.END_PORTAL_FRAME)) {
+                    world.createExplosion(null, x, y + 5, z, 35.0F, World.ExplosionSourceType.MOB);
+                    world.createExplosion(null, x, y - 5, z, 35.0F, World.ExplosionSourceType.MOB);
+                    continue;
+                }
+
+                if (excludedBlocks.contains(state.getBlock())) continue;
+
                 BlockPos newPos = new BlockPos(x, y + heightDifference, z);
 
-                // Ensure the new position is within valid world bounds (-64 to 320)
-                if (newPos.getY() <= 320 && newPos.getY() >= -64) {
-                    world.setBlockState(newPos, state); // Move the block down
+                // Ensure new position is within world bounds
+                if (newPos.getY() <= 319 && newPos.getY() >= -64) {
+                    if (!excludedBlocks.contains(world.getBlockState(newPos).getBlock())) {
+                        moveBlockWithNbt(world, oldPos, newPos);
+                    }
                 }
 
-                // Clear the old block only if we're above the target height (so we don't clear beyond the move)
-                if (y <= currentY && y + heightDifference >= -64) {
-                    world.setBlockState(oldPos, Blocks.AIR.getDefaultState()); // Clear old block
+                // Clear the old block
+                if (!excludedBlocks.contains(world.getBlockState(oldPos).getBlock())) {
+                    world.setBlockState(oldPos, Blocks.AIR.getDefaultState());
                 }
+            }
+        }
+    }
+    //safely move block with NBT
+    private static void moveBlockWithNbt(ServerWorld world, BlockPos oldPos, BlockPos newPos) {
+        BlockState state = world.getBlockState(oldPos);
+
+        // Copy tile entity data if applicable
+        BlockEntity blockEntity = world.getBlockEntity(oldPos);
+        NbtCompound nbt = null;
+        if (blockEntity != null) {
+            nbt = blockEntity.createNbtWithId();
+            world.removeBlockEntity(oldPos);
+        }
+
+        // Set the block state at the new position
+        world.setBlockState(newPos, state);
+
+        // Restore NBT data if needed
+        if (nbt != null) {
+            BlockEntity newBlockEntity = world.getBlockEntity(newPos);
+            if (newBlockEntity != null) {
+                newBlockEntity.readNbt(nbt);
             }
         }
     }
     //Clear all water and lava blocks within int radius around the given position
     public static void clearNearbyFluids(ServerWorld world, BlockPos origin, int radius) {
 
-        if (ColumnClearer.currentMode == ColumnClearer.ClearMode.OCEAN || ColumnClearer.currentMode == ColumnClearer.ClearMode.LAVA_OCEAN){
-            return;
+        if (ColumnClearer.currentMode == ColumnClearer.ClearMode.OCEAN || ColumnClearer.currentMode == ColumnClearer.ClearMode.LAVA_OCEAN) {
+            return; // Skip clearing if in specific modes
         }
 
         for (int x = origin.getX() - radius; x <= origin.getX() + radius; x++) {
             for (int y = origin.getY() - radius; y <= origin.getY() + radius; y++) {
                 for (int z = origin.getZ() - radius; z <= origin.getZ() + radius; z++) {
+
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = world.getBlockState(pos);
 
-                    // Check if the block is water or lava, and replace it with air
-                    if ((state.isOf(Blocks.WATER) || state.isOf(Blocks.LAVA) ||
-                            (state.contains(Properties.WATERLOGGED) &&
-                                    state.get(Properties.WATERLOGGED)))) {
+                    // Check for water, lava, or any waterlogged blocks
+                    if (state.isOf(Blocks.WATER) || state.isOf(Blocks.LAVA) || state.isOf(Blocks.KELP)
+                            || state.isOf(Blocks.KELP_PLANT) || state.isOf(Blocks.SEAGRASS)
+                            || state.isOf(Blocks.SEA_PICKLE) || state.isOf(Blocks.TALL_SEAGRASS)
+                            || (state.contains(Properties.WATERLOGGED) && state.get(Properties.WATERLOGGED))) {
 
                         world.setBlockState(pos, Blocks.AIR.getDefaultState());
                     }
@@ -203,7 +280,7 @@ public class WorldEditor {
             //If it is too high or low of an iteration, set it to air. Otherwise, get the highest block
             //from the belowHighestY array, set it to that, and remove that from the array.
             BlockPos pos = new BlockPos(x, y, z);
-            if (iteration >= FractalGenerator.MAX_ITER / FractalGenerator.SMOOTHING_VALUE || iteration <= FractalGenerator.MIN_ITER) {
+            if (iteration >= FractalGenerator.MAX_ITER || iteration <= FractalGenerator.MIN_ITER) {
                 world.setBlockState(pos, Blocks.AIR.getDefaultState());
             } else {
                 world.setBlockState(pos, belowHighestY.remove(0));
@@ -212,7 +289,7 @@ public class WorldEditor {
 
         boolean hasValidBlocks = false;
         for (int y = highestY + 1; y >= -64; y--) {
-            if (column[y + 64] > FractalGenerator.MIN_ITER && column[y + 64] < FractalGenerator.MAX_ITER / FractalGenerator.SMOOTHING_VALUE) {
+            if (column[y + 64] > FractalGenerator.MIN_ITER && column[y + 64] < FractalGenerator.MAX_ITER) {
                 hasValidBlocks = true;
                 break;
             }
@@ -246,7 +323,7 @@ public class WorldEditor {
                 }
             }
 
-            if (iterations - FractalGenerator.INITIAL_HEIGHT_OFFSET >= FractalGenerator.MAX_ITER / FractalGenerator.SMOOTHING_VALUE
+            if (iterations - FractalGenerator.INITIAL_HEIGHT_OFFSET >= FractalGenerator.MAX_ITER
             || iterations - FractalGenerator.INITIAL_HEIGHT_OFFSET <= FractalGenerator.MIN_ITER) return;
 
             BlockPos mainEndstonePos = new BlockPos(x, iterations - 20, z);
@@ -256,7 +333,6 @@ public class WorldEditor {
             for (int i = 1; i <= depth; i++) {
                 BlockPos belowPos = mainEndstonePos.down(i);
                 world.setBlockState(belowPos, Blocks.END_STONE.getDefaultState());
-
             }
         }
     }
