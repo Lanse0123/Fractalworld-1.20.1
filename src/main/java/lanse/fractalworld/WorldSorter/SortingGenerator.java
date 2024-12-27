@@ -98,6 +98,55 @@ public class SortingGenerator {
         }
         SorterPresets.columnsCompleted++;
     }
+    public static void overWriteColumns(ServerWorld world, int x1, int z1, int x2, int z2, boolean safeSwap) {
+
+        SorterPresets.columnsAttempted++;
+        int column1HighestY = getHighestValidY(world, x1, z1);
+        int column2HighestY = getHighestValidY(world, x2, z2);
+
+        if (safeSwap) {
+            if (column1HighestY == column2HighestY) {
+                return;
+            }
+
+            boolean isColumn1Higher = column1HighestY > column2HighestY;
+            double distanceColumn1 = Math.sqrt(x1 * x1 + z1 * z1);
+            double distanceColumn2 = Math.sqrt(x2 * x2 + z2 * z2);
+
+            // Check if the higher column is closer to (0,0)
+            if ((isColumn1Higher && distanceColumn1 >= distanceColumn2) ||
+                    (!isColumn1Higher && distanceColumn2 >= distanceColumn1)) {
+                return;
+            }
+        }
+
+        BlockPos pos1;
+        BlockPos pos2 = new BlockPos(x2, -64, z2);
+        List<BlockState> column2 = new ArrayList<>();
+
+        // Save column2 blocks
+        for (int i = -64; i < 319; i++) {
+            BlockState state2 = world.getBlockState(pos2);
+            column2.add(state2);
+            pos2 = pos2.up();
+        }
+
+        // Clear column1 blocks to air to prevent drops
+        pos1 = new BlockPos(x1, 319, z1);
+        while (pos1.getY() > -64) {
+            world.setBlockState(pos1, Blocks.AIR.getDefaultState());
+            pos1 = pos1.down();
+        }
+
+        // Copy column2 blocks to column1's position
+        pos1 = new BlockPos(x1, -64, z1);
+        for (int i = -64; i < 319; i++) {
+            world.setBlockState(pos1, column2.get(i + 64));
+            pos1 = pos1.up();
+        }
+
+        SorterPresets.columnsCompleted++;
+    }
 
     public static void stalinSwap(ServerWorld world, int x1, int z1, int x2, int z2) {
 
